@@ -9,11 +9,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Server -> client payload met de speeltijd-statistieken en het aantal doden per speler.
- * Wordt elke seconde door de server naar alle spelers gestuurd; de client-HUD rendert het.
+ * Server -> client payload with the playtime stats and the death count per player.
+ * Sent every second by the server to all players; the client HUD renders it.
  *
- *  runSeconds   = speeltijd van de HUIDIGE run (huidige wereld), reset bij elke wereld-reset.
- *  totalSeconds = totale speeltijd over alle runs heen (blijft bewaard).
+ *  runSeconds   = playtime of the CURRENT run (current world), reset on every world reset.
+ *  totalSeconds = total playtime across all runs (kept).
  */
 public record MchcStatsPayload(long runSeconds, long totalSeconds, List<Entry> entries)
 		implements CustomPacketPayload {

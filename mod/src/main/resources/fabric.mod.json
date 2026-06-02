@@ -3,7 +3,7 @@
 	"id": "mchc-hardcore",
 	"version": "${version}",
 	"name": "MCHC Hardcore Reset",
-	"description": "Coop-hardcore: toont een melding en wisselt naadloos naar een verse wereld (nieuwe seed) zodra een speler sterft, via de vanilla transfer-packet. Plus een HUD met totale speeltijd en death counters.",
+	"description": "Coop hardcore: shows a message and seamlessly switches to a fresh world (new seed) when a player dies, using the vanilla transfer packet. Plus a HUD with playtime and death counters.",
 	"authors": [
 		"MCHC"
 	],

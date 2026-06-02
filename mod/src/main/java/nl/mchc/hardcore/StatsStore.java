@@ -13,12 +13,12 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * Gedeelde statistieken, opgeslagen in control/stats.properties.
- * Blijft bewaard over de wissel tussen de twee servers heen.
+ * Shared stats, stored in control/stats.properties.
+ * Kept across the switch between the two servers.
  *
- *  totalSeconds = totale speeltijd over alle runs (blijft altijd doortellen).
- *  runSeconds   = speeltijd van de huidige run; wordt op 0 gezet bij een wereld-reset.
- *  deaths       = aantal doden per speler (invoegvolgorde = speler 1, 2, ...).
+ *  totalSeconds = total playtime across all runs (always keeps counting up).
+ *  runSeconds   = playtime of the current run; set to 0 on a world reset.
+ *  deaths       = death count per player (insertion order = player 1, 2, ...).
  */
 public class StatsStore {
 	private static final Logger LOGGER = LoggerFactory.getLogger("mchc-hardcore");
@@ -38,10 +38,10 @@ public class StatsStore {
 		try (var in = Files.newInputStream(file)) {
 			p.load(in);
 		} catch (IOException e) {
-			LOGGER.error("[MCHC] Kon stats.properties niet lezen", e);
+			LOGGER.error("[MCHC] Could not read stats.properties", e);
 			return;
 		}
-		// "playtimeSeconds" is de oude naam; nog ondersteund als fallback voor total.
+		// "playtimeSeconds" is the old name; still supported as a fallback for total.
 		totalSeconds = parseLong(p.getProperty("totalSeconds", p.getProperty("playtimeSeconds", "0")));
 		runSeconds = parseLong(p.getProperty("runSeconds", "0"));
 		deaths.clear();
@@ -90,7 +90,7 @@ public class StatsStore {
 				p.store(out, "MCHC Hardcore stats");
 			}
 		} catch (IOException e) {
-			LOGGER.error("[MCHC] Kon stats.properties niet schrijven", e);
+			LOGGER.error("[MCHC] Could not write stats.properties", e);
 		}
 	}
 
@@ -99,7 +99,7 @@ public class StatsStore {
 		runSeconds++;
 	}
 
-	/** Reset alleen de run-timer (bij een nieuwe wereld). Totaal en doden blijven staan. */
+	/** Reset only the run timer (on a new world). Total and deaths stay. */
 	public synchronized void resetRun() {
 		runSeconds = 0L;
 	}
@@ -108,7 +108,7 @@ public class StatsStore {
 		deaths.merge(player, 1, Integer::sum);
 	}
 
-	/** Zorgt dat een speler in de lijst staat (zodat hij met 0 doden zichtbaar is in de HUD). */
+	/** Ensures a player is in the list (so they show with 0 deaths in the HUD). */
 	public synchronized void ensurePlayer(String player) {
 		deaths.putIfAbsent(player, 0);
 	}

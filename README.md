@@ -1,150 +1,158 @@
-# MCHC Hardcore — coop hardcore met auto-reset (Minecraft 26.1.2, Fabric)
+# MCHC Hardcore — coop hardcore with auto-reset (Minecraft 26.1.2, Fabric)
 
-Twee spelers, één hardcore-wereld, doel: de Ender Dragon verslaan. Zodra **één van jullie sterft**
-verschijnt er een grote melding op het scherm:
+Two players, one hardcore world, goal: beat the Ender Dragon. The moment **one of you dies**
+a big message appears on screen:
 
-> **\<Spelernaam\> is dood gegaan**
-> _Kaulo slecht lol, wereld wordt gereset_
+> **\<Playername\> died!**
+> _So bad lol, resetting server_
 
-Die blijft **5 seconden** staan, daarna worden jullie **naadloos** in een gloednieuwe wereld
-(nieuwe seed) gezet — zonder dat iemand opnieuw hoeft te verbinden.
+It stays up for **5 seconds**, then you are **seamlessly** placed in a brand-new world
+(new seed) — without anyone having to reconnect.
 
-Daarnaast is er een **HUD-overlay** (midden-links): totale speeltijd (uu:mm:ss) met daaronder
-het aantal doden per speler.
+There is also a **HUD overlay** (bottom-left): playtime this run, total playtime, and the
+number of deaths per player.
 
 ---
 
-## Hoe het werkt (kort)
+## How it works (short)
 
-Een Minecraft-wereld kan zichzelf niet "live" met een nieuwe seed regenereren. Daarom gebruiken we
-jouw double-buffer-idee: **twee servers tegelijk**, en bij een dood gaan de spelers via de
-**vanilla transfer-packet** automatisch naar de andere server.
+A Minecraft world cannot regenerate itself "live" with a new seed. So we use a double-buffer
+idea: **two servers running at once**, and on death the players are sent to the other server
+via the **vanilla transfer packet**.
 
 ```
-   jij + je vriend
-        |  (bij dood: automatische TRANSFER, geen klik)
+   you + your friend
+        |  (on death: automatic TRANSFER, no click)
         v
   Server "alpha" (25566)  <--->  Server "beta" (25567)
-  waar je speelt                 staat al klaar, verse wereld
+  where you play                 already up, fresh world
 ```
 
-1. Je speelt op **alpha**. **beta** staat al volledig opgestart klaar met een verse wereld
-   (alle 3 dimensies — overworld, nether, end — gewoon vanilla gegenereerd, dus de draak werkt 100%).
-2. Iemand sterft → 5 sec melding → de mod stuurt iedereen een **transfer** naar **beta**
-   (je ziet alleen even "Loading terrain", geen disconnect, geen Connect-knop).
-3. Op de achtergrond reset **alpha** zichzelf: wereld wissen → **nieuwe willekeurige seed** → herstart →
-   staat weer klaar als volgende standby.
-4. Volgende dood → ping-pong terug naar alpha. Enzovoort.
+1. You play on **alpha**. **beta** is already fully booted with a fresh world
+   (all 3 dimensions — overworld, nether, end — vanilla-generated, so the dragon works 100%).
+2. Someone dies → 5s message → the mod sends everyone a **transfer** to **beta**
+   (you only briefly see "Loading terrain", no disconnect, no Connect button).
+3. In the background **alpha** resets itself: wipe world → **new random seed** → restart →
+   ready again as the next standby.
+4. Next death → ping-pong back to alpha. And so on.
 
-> **Waarom geen proxy (Velocity) meer?** Velocity ondersteunt het 26.1-protocol nog niet — de
-> nieuwste build kent alleen Minecraft t/m 1.21.11 en weigert een 26.1.2-client met
-> *"Incompatible client"*. De vanilla transfer-packet (sinds 1.20.5) doet hetzelfde werk,
-> zit al in het spel, en heeft geen extra software nodig.
+> **Why no proxy (Velocity)?** Velocity does not support the 26.1 protocol yet — its newest
+> build only knows Minecraft up to 1.21.11 and rejects a 26.1.2 client with
+> *"Incompatible client"*. The vanilla transfer packet (since 1.20.5) does the same job,
+> is already in the game, and needs no extra software.
 
-De communicatie tussen de twee servers loopt via simpele bestandjes in `MCHC-Server/control`
-(alles draait op jouw pc, dus dat is supersimpel en betrouwbaar). De stats staan in
-`control/stats.properties` en blijven dus bewaard over elke reset/transfer heen.
+Communication between the two servers goes through small flag files in `MCHC-Server/control`
+(everything runs on your PC, so it's simple and reliable). Stats live in
+`control/stats.properties` and survive every reset/transfer.
 
-### Resources besparen: de standby wordt "bevroren"
+### Control: auto-reset vs. manual "next"
 
-Omdat er twee servers tegelijk draaien, zou je dubbel RAM/CPU verwachten. Daarom draait er een
-**supervisor** (apart venster) die de standby-server die je *niet* gebruikt **bevriest**:
+- **Normal:** death → 5s message → automatic transfer + reset.
+- **If you click "Spectate World"** on the death screen within those 5 seconds, the auto-reset
+  is **cancelled**. You stay in the current world as a spectator.
+- From then on it only continues when you type **`next`** in the server console window
+  (alpha or beta). Handy if you want to look around before resetting.
 
-- Alle threads worden ge-suspend → **0% CPU** voor de standby.
-- De working set wordt geleegd → het **fysieke RAM** gaat terug naar Windows (verhuist naar het
-  pagefile). In mijn test op jouw pc zakte een bevroren proces van 72 MB resident naar ~0 MB.
+### Saving resources: the standby is "frozen"
 
-Zodra iemand sterft, wekt de mod de standby **meteen** (bij het begin van de 5-seconden-melding),
-ruim voordat de spelers worden doorgestuurd — dus je merkt er in de praktijk niets van. Een server
-met spelers erop wordt **nooit** bevroren. Bij de allereerste start blijft alpha bewust wakker
-zodat je kunt verbinden; beta wordt pas bevroren zodra jij daadwerkelijk op alpha speelt.
+Because two servers run at once, you'd expect double RAM/CPU. So a **supervisor** (separate
+window) **freezes** the standby server you're not using:
 
-Technisch: gebruikt de Windows-calls `NtSuspendProcess`/`NtResumeProcess` + `EmptyWorkingSet`
-(geen admin nodig). Daarom staat `max-tick-time=-1` in `server.properties` — anders zou Minecraft's
-watchdog na het ontwaken denken dat een tick "minutenlang" duurde en de server crashen.
-Wil je dit niet? Sluit gewoon het supervisor-venster; dan draaien beide servers normaal door.
+- All threads suspended → **0% CPU** for the standby.
+- The working set is emptied → **physical RAM** goes back to Windows (moves to the pagefile).
+  In a test on this PC a frozen process dropped from 72 MB resident to ~0 MB.
+
+When someone dies, the mod wakes the standby **immediately** (at the start of the 5-second
+message), well before players are transferred — so you don't notice it. A server with players
+on it is **never** frozen. On the very first start alpha stays awake so you can connect; beta
+is only frozen once you are actually playing on alpha.
+
+Technical: uses the Windows calls `NtSuspendProcess`/`NtResumeProcess` + `EmptyWorkingSet`
+(no admin needed). That's why `max-tick-time=-1` is set in `server.properties` — otherwise
+Minecraft's watchdog would think a tick took "minutes" after resuming and crash the server.
+Don't want this? Just close the supervisor window; both servers keep running normally.
 
 ---
 
-## Wat zit erin
+## What's included
 
-| Onderdeel | Wat het is |
+| Item | What it is |
 |---|---|
-| `mod/` | **MCHC Hardcore Reset** — Fabric-mod (client + server in één jar): detecteert dood, toont de melding, stuurt de transfer, reset de wereld, houdt stats bij en tekent de HUD. |
-| `setup.ps1` + `1-SETUP.bat` | Downloadt alles, bouwt de jar en zet de hele draaibare structuur klaar. |
-| `supervisor.template.ps1` | Wordt naar `MCHC-Server\supervisor.ps1` gekopieerd; bevriest de standby. |
-| `fix-install.ps1` | Reparatie: download mods opnieuw + fix BOM, mocht de eerste setup iets missen. |
+| `mod/` | **MCHC Hardcore Reset** — Fabric mod (client + server in one jar): detects death, shows the message, sends the transfer, resets the world, tracks stats and draws the HUD. |
+| `setup.ps1` + `1-SETUP.bat` | Downloads everything, builds the jar and lays out the runnable structure. |
+| `supervisor.template.ps1` | Copied to `MCHC-Server\supervisor.ps1`; freezes the standby. |
+| `fix-install.ps1` | Repair: re-download mods + fix BOM, in case the first setup missed something. |
 
-### Mods die ik heb geïmporteerd (extra t.o.v. jouw lijst)
-- **Fabric API** — verplichte basis-library voor vrijwel alle Fabric-mods én voor mijn mod (server + client).
+### Mods I imported (extra on top of your list)
+- **Fabric API** — required base library for almost all Fabric mods and for this mod (server + client).
 
-> Eerdere versies gebruikten Velocity + FabricProxy-Lite. Die zijn **verwijderd** omdat Velocity
-> 26.1 nog niet ondersteunt; we doen het nu volledig met de ingebouwde transfer-packet.
+> Earlier versions used Velocity + FabricProxy-Lite. Those were **removed** because Velocity
+> doesn't support 26.1 yet; it's now fully done with the built-in transfer packet.
 
-### Jouw mods — server (alpha + beta)
-Lithium, FerriteCore, Krypton — plus Fabric API en mijn `mchc-hardcore` mod.
+### Your mods — server (alpha + beta)
+Lithium, FerriteCore, Krypton — plus Fabric API and the `mchc-hardcore` mod.
 
-### Jouw mods — client (in je eigen `.minecraft\mods`)
+### Your mods — client (in your own `.minecraft\mods`)
 Sodium, Lithium, FerriteCore, Krypton, Iris Shaders, ImmediatelyFast, Entity Culling — plus Fabric API
-**en `mchc-hardcore.jar`** (nodig voor de HUD-overlay). Alles staat klaar in `MCHC-Server/client-mods/`.
+**and `mchc-hardcore.jar`** (needed for the HUD overlay). Everything is prepared in `MCHC-Server/client-mods/`.
 
 ---
 
-## Benodigdheden
+## Requirements
 
-- **Java 25** (Temurin): https://adoptium.net/temurin/releases/?version=25 — verplicht voor MC 26.1.2.
-- Internet (de setup downloadt de server en mods).
-- Genoeg RAM: er draaien **2 servers tegelijk** (standaard 2 GB elk) + je eigen Minecraft-client.
-  Dankzij het bevriezen van de standby gebruikt die in de praktijk weinig. Op 16 GB zit dat goed.
-
----
-
-## Installeren — stap voor stap
-
-1. **Dubbelklik `1-SETUP.bat`.** Dit controleert Java, bouwt de mod, downloadt de Fabric-server (×2)
-   en alle mods, en genereert alle configuratie + scripts in `MCHC-Server\`.
-   (Eerste keer duurt dit een paar minuten.)
-
-2. **Server starten:** dubbelklik `MCHC-Server\START.bat`.
-   Er openen 3 vensters: alpha, beta en de supervisor. Laat ze open staan. (Sluiten = stoppen;
-   het supervisor-venster sluiten stopt alleen het bevriezen.)
-
-3. **Client klaarmaken (jij en je vriend, allebei):**
-   - Installeer **Fabric Loader voor MC 26.1.2**: https://fabricmc.net/use/installer/
-   - Kopieer **alles** uit `MCHC-Server\client-mods\` naar `%APPDATA%\.minecraft\mods`
-     (maak de `mods`-map aan als die niet bestaat).
-   - Start Minecraft met het **Fabric**-profiel.
-
-4. **Verbinden:**
-   - **Jij (host-pc):** Multiplayer → Direct connect → `localhost:25566` (begin altijd op **alpha**).
-   - **Je vriend (internet):** geef hem je **publieke IP**; hij verbindt met `jouw-ip:25566`.
-     Forward in je router **TCP 25566 én 25567** (beide servers, want de transfer wijst naar de andere poort).
-   - Zet je **publieke IP** bij `publicTransferHost` in **beide** `hardcore.properties`, anders krijgt
-     je vriend bij een reset een transfer naar `127.0.0.1` (= zijn eigen pc).
-
-Klaar! Bij elke dood gebeurt de melding + transfer + reset automatisch.
+- **Java 25** (Temurin): https://adoptium.net/temurin/releases/?version=25 — required for MC 26.1.2.
+- Internet (setup downloads the server and mods).
+- Enough RAM: **2 servers run at once** (2 GB each by default) + your own Minecraft client.
+  Thanks to freezing the standby it uses little in practice. 16 GB is comfortable.
 
 ---
 
-## Instellingen aanpassen
+## Install — step by step
 
-**Melding-tekst / 5 seconden / publiek IP** — `MCHC-Server\alpha\hardcore.properties` en `...\beta\...`:
+1. **Double-click `1-SETUP.bat`.** This checks Java, builds the mod, downloads the Fabric server (x2)
+   and all mods, and generates all config + scripts in `MCHC-Server\`.
+   (First time takes a few minutes.)
+
+2. **Start the server:** double-click `MCHC-Server\START.bat`.
+   Three windows open: alpha, beta and the supervisor. Keep them open. (Closing = stopping;
+   closing the supervisor window only stops the freezing.)
+
+3. **Prepare the client (you and your friend, both):**
+   - Install **Fabric Loader for MC 26.1.2**: https://fabricmc.net/use/installer/
+   - Copy **everything** from `MCHC-Server\client-mods\` into `%APPDATA%\.minecraft\mods`
+     (create the `mods` folder if it doesn't exist).
+   - Start Minecraft with the **Fabric** profile.
+
+4. **Connect:**
+   - **You (host PC):** Multiplayer → Direct Connect → `localhost:25566` (always start on **alpha**).
+   - **Your friend (internet):** give them your **public IP**; they connect to `your-ip:25566`.
+     Forward **TCP 25566 and 25567** in your router (both servers, since the transfer points to the other port).
+   - Put your **public IP** at `publicTransferHost` in **both** `hardcore.properties` files, otherwise on a
+     reset your friend gets a transfer to `127.0.0.1` (= their own PC).
+
+Done! On every death the message + transfer + reset happen automatically.
+
+---
+
+## Settings
+
+**Message text / 5 seconds / public IP** — `MCHC-Server\alpha\hardcore.properties` and `...\beta\...`:
 ```
 countdownSeconds=5
-title=%player% is dood gegaan
-subtitle=Kaulo slecht lol, wereld wordt gereset
-publicTransferHost=          # <- vul hier je publieke IP in voor je vriend
+title=%player% died!
+subtitle=So bad lol, resetting server
+publicTransferHost=          # <- put your public IP here for your friend
 ```
-(`%player%` wordt vervangen door de naam van wie sterft.)
+(`%player%` is replaced by the name of whoever dies.)
 
-**RAM per server** — in `MCHC-Server\alpha\run.bat` en `...\beta\run.bat` de regel
-`java -Dmchc.server=... -Xms1G -Xmx2G -jar server.jar nogui` — pas `-Xmx2G` aan.
+**RAM per server** — in `MCHC-Server\alpha\run.bat` and `...\beta\run.bat` the line
+`java -Dmchc.server=... -Xms1G -Xmx2G -jar server.jar nogui` — adjust `-Xmx2G`.
 
-**Whitelist (aanrader voor alleen jullie twee)** — zet in beide `server.properties` `white-list=true`.
+**Whitelist (recommended for just the two of you)** — set `white-list=true` in both `server.properties`.
 
 ---
 
-## Handmatige download-links (voor als de setup iets niet vindt)
+## Manual download links (in case setup can't find something)
 
 - Fabric server: https://fabricmc.net/use/server/
 - Sodium: https://modrinth.com/mod/sodium · Lithium: https://modrinth.com/mod/lithium
@@ -152,35 +160,37 @@ publicTransferHost=          # <- vul hier je publieke IP in voor je vriend
 - Iris: https://modrinth.com/mod/iris · ImmediatelyFast: https://modrinth.com/mod/immediatelyfast
 - Entity Culling: https://modrinth.com/mod/entityculling · Fabric API: https://modrinth.com/mod/fabric-api
 
-Kies overal de versie voor **26.1.2 / Fabric**. Server-mods → `alpha\mods` én `beta\mods`.
-Client-mods (incl. `mchc-hardcore.jar`) → je `.minecraft\mods`.
+Pick the **26.1.2 / Fabric** version everywhere. Server mods → `alpha\mods` and `beta\mods`.
+Client mods (incl. `mchc-hardcore.jar`) → your `.minecraft\mods`.
 
 ---
 
-## Zelf de jar bouwen (zonder setup)
+## Build the jar yourself (without setup)
 
 ```
 cd mod && gradlew.bat build      # -> build\libs\mchc-hardcore-1.0.0.jar
 ```
-Plaats die in `alpha\mods`, `beta\mods` én in je `.minecraft\mods` (voor de HUD).
+Place it in `alpha\mods`, `beta\mods` and your `.minecraft\mods` (for the HUD).
 
 ---
 
-## Probleemoplossing
+## Troubleshooting
 
-- **"Incompatible client"** → dit kwam door Velocity (verwijderd). Verbind nu direct met `localhost:25566`.
-- **"Java 25 vereist"** → installeer Temurin 25 en herstart de setup.
-- **Geen melding/HUD** → check dat `mchc-hardcore.jar` in `alpha\mods`, `beta\mods` én je `.minecraft\mods` staat.
-- **Vriend belandt bij reset op zijn eigen pc** → `publicTransferHost` niet ingevuld in `hardcore.properties`.
-- **Vriend kan niet verbinden** → TCP 25566 **en** 25567 geforward? Firewall Java toestaan? Publieke IP klopt?
-- **Reset gebeurt niet** → kijk in `MCHC-Server\control` (bestandjes als `alpha.ready`, `alpha.active`)
-  en in de servervensters naar `[MCHC]`-logregels.
+- **"Incompatible client"** → this was caused by Velocity (removed). Now connect directly to `localhost:25566`.
+- **"Java 25 required"** → install Temurin 25 and re-run setup.
+- **No message/HUD** → make sure `mchc-hardcore.jar` is in `alpha\mods`, `beta\mods` AND your `.minecraft\mods`.
+- **Friend ends up on their own PC after a reset** → `publicTransferHost` not filled in `hardcore.properties`.
+- **Friend can't connect** → TCP 25566 **and** 25567 forwarded? Firewall allows Java? Public IP correct?
+- **"another process has locked the file"** → fixed: `run.bat` kills a leftover/frozen JVM of the same
+  server before starting. If you still hit it, make sure no stray `java.exe` is running and restart.
+- **Reset doesn't happen** → check `MCHC-Server\control` (flags like `alpha.ready`, `alpha.active`)
+  and the server windows for `[MCHC]` log lines.
 
 ---
 
-## Belangrijke ontwerp-notitie (eerlijk)
+## Honest design note
 
-De mod is door mij **gecompileerd en geverifieerd** tegen de echte Minecraft 26.1.2 + Fabric API
-(transfer-packet, HUD-API, networking — alle namen kloppen). Wat ik hier **niet** kon: een echte
-2-speler-sessie naspelen. De eerste live run is de echte test; de logregels in de servervensters
-en de probleemoplossing hierboven wijzen je dan de weg.
+The mod is **compiled and verified** against the real Minecraft 26.1.2 + Fabric API
+(transfer packet, HUD API, networking — all names check out). What I could **not** do here:
+play through a real 2-player session. The first live run is the real test; the log lines in
+the server windows and the troubleshooting above will point you the right way.

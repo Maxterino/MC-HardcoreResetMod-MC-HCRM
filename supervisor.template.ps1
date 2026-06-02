@@ -1,16 +1,15 @@
 <#
-  MCHC supervisor — bevriest de inactieve standby-server om CPU en fysiek RAM te besparen.
+  MCHC supervisor - freezes the inactive standby server to save CPU and physical RAM.
 
-  Hoe:
-   - Elke server-JVM start met -Dmchc.server=alpha (of beta), zodat we hem terugvinden.
-   - Een server die 'ready' is maar geen spelers heeft (.active ontbreekt) en niet gewekt
-     wordt, wordt bevroren: alle threads suspended (0% CPU) + working set geleegd
-     (fysiek RAM gaat terug naar het systeem / pagefile).
-   - Zodra de mod 'wake-<naam>.flag' schrijft (begin van de dood-melding) of er spelers
-     op zitten (.active), wordt de server direct hervat — ruim voordat spelers aankomen.
+  How:
+   - Each server JVM starts with -Dmchc.server=alpha (or beta) so we can find it.
+   - A server that is 'ready' but has no players (.active missing) and is not being
+     woken, gets frozen: all threads suspended (0% CPU) + working set emptied
+     (physical RAM goes back to the system / pagefile).
+   - As soon as the mod writes 'wake-<name>.flag' (start of the death message) or players
+     are on it (.active), the server is resumed immediately - well before players arrive.
 
-  Geen admin nodig. Sluit dit venster om het bevriezen te stoppen (servers blijven dan
-  gewoon allebei draaien).
+  No admin needed. Close this window to stop freezing (both servers then just keep running).
 #>
 
 $ErrorActionPreference = 'Continue'
@@ -24,14 +23,14 @@ Add-Type -Namespace Mchc -Name Native -MemberDefinition @'
 [System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool K32EmptyWorkingSet(System.IntPtr h);
 '@
 
-# naam -> @{ Proc=Process; Suspended=$bool }
+# name -> @{ Proc=Process; Suspended=$bool }
 $state = @{}
 foreach($s in $Servers){ $state[$s] = @{ Proc = $null; Suspended = $false } }
 
 function Find-ServerProcess($name){
     $cur = $state[$name].Proc
     if($cur -and -not $cur.HasExited){ return $cur }
-    # opnieuw zoeken (PID verandert na elke reset/herstart)
+    # search again (PID changes after each reset/restart)
     try {
         $ci = Get-CimInstance Win32_Process -Filter "Name='java.exe'" -ErrorAction Stop |
               Where-Object { $_.CommandLine -and $_.CommandLine -match "mchc\.server=$name(\s|$|`")" } |
@@ -39,7 +38,7 @@ function Find-ServerProcess($name){
     } catch { return $null }
     if($ci){
         try { $p = Get-Process -Id $ci.ProcessId -ErrorAction Stop } catch { return $null }
-        $null = $p.Handle  # cache handle nu het proces nog niet suspended is
+        $null = $p.Handle  # cache the handle while the process is not yet suspended
         $state[$name].Proc = $p
         $state[$name].Suspended = $false
         return $p
@@ -56,9 +55,9 @@ function Suspend-Server($name){
         [Mchc.Native]::NtSuspendProcess($p.Handle) | Out-Null
         [Mchc.Native]::K32EmptyWorkingSet($p.Handle) | Out-Null
         $st.Suspended = $true
-        Write-Host ("[supervisor] '{0}' BEVROREN (pid {1}) - 0% CPU, RAM vrijgegeven." -f $name, $p.Id) -ForegroundColor DarkCyan
+        Write-Host ("[supervisor] '{0}' FROZEN (pid {1}) - 0% CPU, RAM released." -f $name, $p.Id) -ForegroundColor DarkCyan
     } catch {
-        Write-Host ("[supervisor] suspend van '{0}' mislukt: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("[supervisor] suspend of '{0}' failed: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
     }
 }
 
@@ -70,18 +69,18 @@ function Resume-Server($name){
     try {
         [Mchc.Native]::NtResumeProcess($p.Handle) | Out-Null
         $st.Suspended = $false
-        Write-Host ("[supervisor] '{0}' HERVAT (pid {1})." -f $name, $p.Id) -ForegroundColor Cyan
+        Write-Host ("[supervisor] '{0}' RESUMED (pid {1})." -f $name, $p.Id) -ForegroundColor Cyan
     } catch {
-        Write-Host ("[supervisor] resume van '{0}' mislukt: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
+        Write-Host ("[supervisor] resume of '{0}' failed: {1}" -f $name, $_.Exception.Message) -ForegroundColor Red
     }
 }
 
 Write-Host "==============================================================" -ForegroundColor Magenta
-Write-Host "  MCHC supervisor actief - bespaart resources op de standby." -ForegroundColor Magenta
-Write-Host "  (Laat dit venster open. Sluiten = niet meer bevriezen.)"      -ForegroundColor Magenta
+Write-Host "  MCHC supervisor active - saves resources on the standby."     -ForegroundColor Magenta
+Write-Host "  (Keep this window open. Closing = no more freezing.)"          -ForegroundColor Magenta
 Write-Host "==============================================================" -ForegroundColor Magenta
 
-# partner-naam opzoeken
+# partner lookup
 $partnerOf = @{ 'alpha' = 'beta'; 'beta' = 'alpha' }
 
 while($true){
@@ -92,7 +91,7 @@ while($true){
         $wake          = Test-Path (Join-Path $Control "wake-$name.flag")
         $partnerActive = Test-Path (Join-Path $Control "$partner.active")
 
-        # Proces is gestopt? -> state opschonen.
+        # Process stopped? -> clean up state.
         $p = $state[$name].Proc
         if($p -and $p.HasExited){ $state[$name].Proc = $null; $state[$name].Suspended = $false }
 
@@ -103,13 +102,13 @@ while($true){
         }
 
         if($active){
-            # Er zitten spelers op: NOOIT bevriezen.
+            # Players are on it: NEVER freeze.
             Resume-Server $name
             continue
         }
 
-        # Alleen bevriezen als WIJ leeg en klaar zijn EN de partner het actieve spel draait.
-        # (Bij de allereerste start is niemand actief -> we laten alpha staan zodat je kunt verbinden.)
+        # Only freeze if WE are empty and ready AND the partner is running the active game.
+        # (On the very first start nobody is active -> we leave alpha running so you can connect.)
         if($ready -and -not $active -and $partnerActive){
             Suspend-Server $name
         }

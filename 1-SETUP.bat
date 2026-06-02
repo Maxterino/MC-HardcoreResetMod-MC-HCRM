@@ -2,8 +2,8 @@
 cd /d "%~dp0"
 echo ===============================================================
 echo   MCHC Hardcore - SETUP
-echo   Dit downloadt de server en alle mods en bouwt de mod-jar.
-echo   Zorg dat je internet hebt en Java 25 is geinstalleerd.
+echo   This downloads the server and all mods and builds the mod jar.
+echo   Make sure you have internet and Java 25 installed.
 echo ===============================================================
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"

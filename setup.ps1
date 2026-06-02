@@ -1,9 +1,9 @@
 <#
   MCHC Hardcore - setup script
-  Downloadt server, proxy, alle mods en bouwt de twee jars (mod + velocity-plugin).
-  Bouwt de complete draaibare structuur in .\MCHC-Server\
+  Downloads the Fabric server (x2) and all mods, and builds the mod jar.
+  Builds the complete runnable structure in .\MCHC-Server\
 
-  Draai dit via 1-SETUP.bat (dubbelklik) of:  powershell -ExecutionPolicy Bypass -File setup.ps1
+  Run via 1-SETUP.bat (double-click) or:  powershell -ExecutionPolicy Bypass -File setup.ps1
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -17,44 +17,44 @@ $UA     = 'MCHC-setup/1.0 (contact: maxvmaasakker@gmail.com)'
 function Info($m){ Write-Host "[setup] $m" -ForegroundColor Cyan }
 function Ok($m){   Write-Host "[ ok  ] $m" -ForegroundColor Green }
 function Warn($m){ Write-Host "[warn ] $m" -ForegroundColor Yellow }
-function Fail($m){ Write-Host "[FOUT ] $m" -ForegroundColor Red }
+function Fail($m){ Write-Host "[FAIL ] $m" -ForegroundColor Red }
 
 function Download($url, $dest){
     $dir = Split-Path -Parent $dest
     if(-not (Test-Path $dir)){ New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     Info "download: $url"
     Invoke-WebRequest -Uri $url -OutFile $dest -Headers @{ 'User-Agent' = $UA } -UseBasicParsing
-    Ok ("opgeslagen: " + (Split-Path -Leaf $dest))
+    Ok ("saved: " + (Split-Path -Leaf $dest))
 }
 
-# Schrijft tekst weg als UTF-8 ZONDER BOM (anders crashen TOML/properties-parsers).
+# Writes text as UTF-8 WITHOUT BOM (otherwise TOML/properties parsers crash).
 function Write-NoBom($path, $text){
     $dir = Split-Path -Parent $path
     if(-not (Test-Path $dir)){ New-Item -ItemType Directory -Force -Path $dir | Out-Null }
     [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# Haalt de nieuwste Fabric-versie van een Modrinth-mod voor MC $MC op en downloadt die.
-# We halen ALLE fabric-versies op en filteren client-side -> betrouwbaarder dan server-side filters.
+# Fetches the latest Fabric version of a Modrinth mod for MC $MC and downloads it.
+# We fetch ALL fabric versions and filter client-side -> more reliable than server-side filters.
 function Get-ModrinthJar($slug, $destDir){
     New-Item -ItemType Directory -Force -Path $destDir | Out-Null
     $url = "https://api.modrinth.com/v2/project/$slug/version?loaders=%5B%22fabric%22%5D"
     try {
         $vs = Invoke-RestMethod -Uri $url -Headers @{ 'User-Agent' = $UA } -UseBasicParsing
     } catch {
-        Fail "Modrinth-API-fout voor '$slug': $($_.Exception.Message). Handmatig: https://modrinth.com/mod/$slug"
+        Fail "Modrinth API error for '$slug': $($_.Exception.Message). Manual: https://modrinth.com/mod/$slug"
         return $false
     }
     $pick = $vs | Where-Object { $_.game_versions -contains $MC }   | Select-Object -First 1
     if(-not $pick){ $pick = $vs | Where-Object { $_.game_versions -contains '26.1' } | Select-Object -First 1 }
     if(-not $pick){ $pick = $vs | Select-Object -First 1 }
-    if(-not $pick){ Fail "Geen Fabric-versie gevonden voor '$slug'. Handmatig: https://modrinth.com/mod/$slug"; return $false }
+    if(-not $pick){ Fail "No Fabric version found for '$slug'. Manual: https://modrinth.com/mod/$slug"; return $false }
     $file = $pick.files | Where-Object { $_.primary } | Select-Object -First 1
     if(-not $file){ $file = $pick.files | Select-Object -First 1 }
     try {
         Download $file.url (Join-Path $destDir $file.filename)
     } catch {
-        Fail "Download mislukt voor '$slug': $($_.Exception.Message)"
+        Fail "Download failed for '$slug': $($_.Exception.Message)"
         return $false
     }
     Start-Sleep -Milliseconds 300
@@ -63,7 +63,7 @@ function Get-ModrinthJar($slug, $destDir){
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Magenta
-Write-Host "  MCHC Hardcore - automatische setup (Minecraft $MC, Fabric)"       -ForegroundColor Magenta
+Write-Host "  MCHC Hardcore - automatic setup (Minecraft $MC, Fabric)"          -ForegroundColor Magenta
 Write-Host "==================================================================" -ForegroundColor Magenta
 Write-Host ""
 
@@ -71,35 +71,35 @@ Write-Host ""
 try {
     $javaVer = (& java -version 2>&1) -join "`n"
     if($javaVer -match '"(\d+)'){ $maj = [int]$Matches[1] } else { $maj = 0 }
-    if($maj -lt 25){ Warn "Java $maj gedetecteerd. Minecraft $MC vereist Java 25. Installeer Temurin 25: https://adoptium.net/temurin/releases/?version=25" }
-    else { Ok "Java $maj gevonden." }
+    if($maj -lt 25){ Warn "Java $maj detected. Minecraft $MC requires Java 25. Install Temurin 25: https://adoptium.net/temurin/releases/?version=25" }
+    else { Ok "Java $maj found." }
 } catch {
-    Fail "Java niet gevonden in PATH. Installeer Temurin 25: https://adoptium.net/temurin/releases/?version=25"
+    Fail "Java not found in PATH. Install Temurin 25: https://adoptium.net/temurin/releases/?version=25"
 }
 
-# --- 1. Mappenstructuur --------------------------------------------------------
-Info "Mappenstructuur aanmaken in $Server"
-foreach($d in @('control','velocity\plugins','alpha\mods','beta\mods','client-mods')){
+# --- 1. Folder structure -------------------------------------------------------
+Info "Creating folder structure in $Server"
+foreach($d in @('control','alpha\mods','beta\mods','client-mods')){
     New-Item -ItemType Directory -Force -Path (Join-Path $Server $d) | Out-Null
 }
 
-# --- 2. Gradle wrapper ophalen + jars bouwen -----------------------------------
+# --- 2. Gradle wrapper + build the jar -----------------------------------------
 $wrapperBat = 'https://raw.githubusercontent.com/FabricMC/fabric-example-mod/26.1/gradlew.bat'
 $wrapperJar = 'https://raw.githubusercontent.com/FabricMC/fabric-example-mod/26.1/gradle/wrapper/gradle-wrapper.jar'
 
 function Build-Project($projDir, $jarGlob, $destFiles){
-    Info "Bouw project: $projDir"
+    Info "Building project: $projDir"
     Download $wrapperBat (Join-Path $projDir 'gradlew.bat')
     Download $wrapperJar (Join-Path $projDir 'gradle\wrapper\gradle-wrapper.jar')
     Push-Location $projDir
     try {
         & .\gradlew.bat --no-daemon build
-        if($LASTEXITCODE -ne 0){ throw "gradle build faalde (exit $LASTEXITCODE)" }
+        if($LASTEXITCODE -ne 0){ throw "gradle build failed (exit $LASTEXITCODE)" }
     } finally { Pop-Location }
     $jar = Get-ChildItem -Path (Join-Path $projDir 'build\libs') -Filter $jarGlob |
            Where-Object { $_.Name -notmatch '-sources' -and $_.Name -notmatch '-dev' } |
            Select-Object -First 1
-    if(-not $jar){ throw "Geen jar gevonden in $projDir\build\libs ($jarGlob)" }
+    if(-not $jar){ throw "No jar found in $projDir\build\libs ($jarGlob)" }
     foreach($d in $destFiles){ Copy-Item $jar.FullName $d -Force; Ok "jar -> $d" }
 }
 
@@ -107,14 +107,15 @@ $buildOk = $true
 try {
     Build-Project (Join-Path $Root 'mod') 'mchc-hardcore*.jar' @(
         (Join-Path $Server 'alpha\mods\mchc-hardcore.jar'),
-        (Join-Path $Server 'beta\mods\mchc-hardcore.jar')
+        (Join-Path $Server 'beta\mods\mchc-hardcore.jar'),
+        (Join-Path $Server 'client-mods\mchc-hardcore.jar')
     )
-} catch { Fail "Mod bouwen mislukt: $_"; $buildOk = $false }
+} catch { Fail "Building the mod failed: $_"; $buildOk = $false }
 
-# (Geen proxy meer: Velocity ondersteunt het 26.1-protocol nog niet. We gebruiken de
-#  vanilla transfer-packet die de mod zelf verstuurt, dus er is geen proxy-plugin nodig.)
+# (No proxy: Velocity does not support the 26.1 protocol yet. We use the vanilla
+#  transfer packet that the mod sends itself, so no proxy plugin is needed.)
 
-# --- 3. Fabric server-launcher (alpha + beta) ----------------------------------
+# --- 3. Fabric server launcher (alpha + beta) ----------------------------------
 try {
     $loader    = (Invoke-RestMethod "https://meta.fabricmc.net/v2/versions/loader/$MC" -Headers @{ 'User-Agent'=$UA } -UseBasicParsing)[0].loader.version
     $installer = (Invoke-RestMethod "https://meta.fabricmc.net/v2/versions/installer"   -Headers @{ 'User-Agent'=$UA } -UseBasicParsing)[0].version
@@ -123,26 +124,24 @@ try {
     Download $srvUrl (Join-Path $Server 'beta\server.jar')
     Ok "Fabric server (loader $loader, installer $installer)"
 } catch {
-    Fail "Fabric server-jar downloaden mislukt: $_  -> handmatig: https://fabricmc.net/use/server/"
+    Fail "Downloading the Fabric server jar failed: $_  -> manual: https://fabricmc.net/use/server/"
 }
 
-# --- 4. (geen proxy) -----------------------------------------------------------
-
-# --- 5. Server-mods (alpha + beta) ---------------------------------------------
+# --- 4. Server mods (alpha + beta) ---------------------------------------------
 $serverMods = @('fabric-api','lithium','ferrite-core','krypton')
 foreach($m in $serverMods){
     Get-ModrinthJar $m (Join-Path $Server 'alpha\mods') | Out-Null
     Get-ModrinthJar $m (Join-Path $Server 'beta\mods')  | Out-Null
 }
 
-# --- 6. Client-mods (voor in je .minecraft\mods) -------------------------------
+# --- 5. Client mods (for your .minecraft\mods) ---------------------------------
 $clientMods = @('fabric-api','sodium','lithium','ferrite-core','krypton','iris','immediatelyfast','entityculling')
 foreach($m in $clientMods){
     Get-ModrinthJar $m (Join-Path $Server 'client-mods') | Out-Null
 }
 
-# --- 7. Configuratie + scripts genereren ---------------------------------------
-Info "Configuratie genereren"
+# --- 6. Generate config + scripts ----------------------------------------------
+Info "Generating configuration"
 
 function New-ServerProperties($name, $port, $seed){
 @"
@@ -185,18 +184,18 @@ partnerName=$partner
 partnerPort=$partnerPort
 controlDir=../control
 countdownSeconds=5
-title=%player% is dood gegaan
-subtitle=Kaulo slecht lol, wereld wordt gereset
+title=%player% died!
+subtitle=So bad lol, resetting server
 localTransferHost=127.0.0.1
-# Vul je PUBLIEKE IP in zodat je vriend (over internet) ook automatisch mee-verhuist
-# bij een reset. Laat leeg als je alleen lokaal test.
+# Fill in your PUBLIC IP so your friend (over the internet) is also transferred
+# automatically on a reset. Leave empty if you only test locally.
 publicTransferHost=
 "@
 }
 Write-NoBom (Join-Path $Server 'alpha\hardcore.properties') (New-HardcoreProps 'alpha' 'beta'  25567)
 Write-NoBom (Join-Path $Server 'beta\hardcore.properties')  (New-HardcoreProps 'beta'  'alpha' 25566)
 
-# new-seed.ps1 (gebruikt door run-scripts bij elke reset)
+# new-seed.ps1 (used by the run scripts on each reset)
 @'
 param([string]$PropsFile)
 $rand = New-Object System.Random
@@ -205,10 +204,10 @@ $lines = @()
 if(Test-Path $PropsFile){ $lines = Get-Content $PropsFile | Where-Object { $_ -notmatch '^\s*level-seed=' } }
 $lines += "level-seed=$seed"
 Set-Content -Path $PropsFile -Value $lines -Encoding ASCII
-Write-Host "[new-seed] nieuwe seed: $seed"
+Write-Host "[new-seed] new seed: $seed"
 '@ | Set-Content -Path (Join-Path $Server 'new-seed.ps1') -Encoding UTF8
 
-# run-scripts (auto-restart loops met wereld-reset)
+# run scripts (auto-restart loops with world reset)
 function New-RunScript($name){
 @"
 @echo off
@@ -217,12 +216,12 @@ cd /d "%~dp0"
 set CONTROL=..\control
 set NAME=$name
 :loop
-rem Kill een eventueel achtergebleven (of bevroren) JVM van DEZE server, zodat de wereld-lock
-rem altijd vrij is. Anders crasht de start met "another process has locked the file".
+rem Kill any leftover (or frozen) JVM of THIS server so the world lock is always free.
+rem Otherwise the start crashes with "another process has locked the file".
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { `$_.CommandLine -match 'mchc.server=%NAME%' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
 if exist "%CONTROL%\%NAME%.reset-now.flag" (
-  echo [%NAME%] RESET: wereld wissen en nieuwe seed zetten...
+  echo [%NAME%] RESET: wiping world and setting a new seed...
   if exist world rmdir /s /q world
   powershell -NoProfile -ExecutionPolicy Bypass -File "..\new-seed.ps1" "%CD%\server.properties"
   del "%CONTROL%\%NAME%.reset-now.flag" >nul 2>&1
@@ -230,9 +229,9 @@ if exist "%CONTROL%\%NAME%.reset-now.flag" (
 if exist "%CONTROL%\%NAME%.ready"  del "%CONTROL%\%NAME%.ready"  >nul 2>&1
 if exist "%CONTROL%\%NAME%.active" del "%CONTROL%\%NAME%.active" >nul 2>&1
 
-echo [%NAME%] Server start...
+echo [%NAME%] Server starting...
 java -Dmchc.server=%NAME% -Xms1G -Xmx2G -jar server.jar nogui
-echo [%NAME%] Server gestopt. Herstart over 2 sec... (sluit dit venster om definitief te stoppen)
+echo [%NAME%] Server stopped. Restarting in 2 sec... (close this window to stop for good)
 timeout /t 2 /nobreak >nul
 goto loop
 "@ | Set-Content -Path (Join-Path $Server "$name\run.bat") -Encoding ASCII
@@ -243,36 +242,36 @@ New-RunScript 'beta'
 @"
 @echo off
 cd /d "%~dp0"
-echo Start MCHC Hardcore (alpha + beta + supervisor) in aparte vensters...
+echo Starting MCHC Hardcore (alpha + beta + supervisor) in separate windows...
 start "MCHC alpha"    cmd /k alpha\run.bat
 start "MCHC beta"     cmd /k beta\run.bat
 timeout /t 2 /nobreak >nul
 start "MCHC supervisor" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0supervisor.ps1"
 echo.
-echo Klaar.
-echo   Verbind als je net begint met de ACTIEVE server:  localhost:25566   (alpha)
-echo   Bij een dood verhuis je automatisch (transfer) naar de andere server - niets doen.
-echo   Je vriend gebruikt jouw-publieke-IP en moet poorten 25566 en 25567 (TCP) geforward hebben.
-echo Sluit de vensters om te stoppen.
+echo Done.
+echo   When you start fresh, connect to the ACTIVE server:  localhost:25566   (alpha)
+echo   On death you are transferred automatically to the other server - do nothing.
+echo   Your friend uses your public IP and must port-forward TCP 25566 AND 25567.
+echo Close the windows to stop.
 pause
 "@ | Set-Content -Path (Join-Path $Server 'START.bat') -Encoding ASCII
 
-# supervisor.ps1 — bevriest de inactieve standby-server (RAM/CPU besparen)
+# supervisor.ps1 - freezes the inactive standby server (saves RAM/CPU)
 Copy-Item (Join-Path $Root 'supervisor.template.ps1') (Join-Path $Server 'supervisor.ps1') -Force -ErrorAction SilentlyContinue
 if(-not (Test-Path (Join-Path $Server 'supervisor.ps1'))){
-    Warn "supervisor.template.ps1 niet gevonden naast setup.ps1 - standby wordt dan niet bevroren. (Niet kritiek.)"
+    Warn "supervisor.template.ps1 not found next to setup.ps1 - the standby will not be frozen. (Not critical.)"
 }
 
 Write-Host ""
 Write-Host "==================================================================" -ForegroundColor Magenta
-if($buildOk){ Ok "SETUP KLAAR." } else { Warn "Setup klaar, maar het bouwen van een jar is mislukt - zie meldingen hierboven." }
+if($buildOk){ Ok "SETUP DONE." } else { Warn "Setup done, but building a jar failed - see messages above." }
 Write-Host "==================================================================" -ForegroundColor Magenta
 Write-Host ""
-Write-Host "Volgende stappen:" -ForegroundColor White
-Write-Host "  1) Server starten:  dubbelklik  MCHC-Server\START.bat"
-Write-Host "  2) Client-mods:     kopieer alles uit  MCHC-Server\client-mods\  naar  %APPDATA%\.minecraft\mods"
-Write-Host "                      (installeer eerst Fabric Loader voor MC $MC via https://fabricmc.net/use/installer/)"
-Write-Host "  3) Verbind met:     localhost:25566   (jij, begin altijd op alpha)"
-Write-Host "                      jouw-publieke-IP:25566   (je vriend; forward TCP 25566 EN 25567)"
-Write-Host "                      Vul je publieke IP in bij publicTransferHost in beide hardcore.properties."
+Write-Host "Next steps:" -ForegroundColor White
+Write-Host "  1) Start the server:  double-click  MCHC-Server\START.bat"
+Write-Host "  2) Client mods:       copy everything from  MCHC-Server\client-mods\  into  %APPDATA%\.minecraft\mods"
+Write-Host "                        (install Fabric Loader for MC $MC first via https://fabricmc.net/use/installer/)"
+Write-Host "  3) Connect to:        localhost:25566   (you, always start on alpha)"
+Write-Host "                        your-public-IP:25566   (your friend; forward TCP 25566 AND 25567)"
+Write-Host "                        Fill in your public IP at publicTransferHost in both hardcore.properties files."
 Write-Host ""

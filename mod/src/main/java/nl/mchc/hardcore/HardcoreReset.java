@@ -33,17 +33,17 @@ import java.util.Properties;
 /**
  * MCHC Hardcore Reset (server-side).
  *
- * Flow per actieve server (alpha/beta) bij een dood:
- *  1. Speler sterft -> grote titel naar alle spelers, 5 sec aftellen. Direct wake-<partner>.
- *  2a. Doet niemand iets binnen 5 sec  -> automatisch doorgaan (transfer + reset).
- *  2b. Klikt iemand "Spectate World" (wordt spectator) binnen die 5 sec -> aftellen ANNULEREN.
- *      Daarna gebeurt er niets tot je in de server-console 'next' typt.
- *  3. Doorgaan = alle spelers via de vanilla transfer-packet naar de standby sturen,
- *     daarna deze server stoppen zodat run.bat de wereld wist + nieuwe seed zet + herstart.
+ * Flow per active server (alpha/beta) on a death:
+ *  1. Player dies -> big title to all players, 5 sec countdown. Immediately wake-<partner>.
+ *  2a. If nobody does anything within 5 sec  -> continue automatically (transfer + reset).
+ *  2b. If someone clicks "Spectate World" (becomes spectator) within those 5 sec -> CANCEL countdown.
+ *      After that nothing happens until you type 'next' in the server console.
+ *  3. Continue = send all players to the standby via the vanilla transfer packet,
+ *     then stop this server so run.bat wipes the world + sets a new seed + restarts.
  *
- * Console-commando 'next' forceert het doorgaan (ook tijdens het aftellen of de pauze).
+ * The console command 'next' forces continuation (also during the countdown or the pause).
  *
- * Stats (control/stats.properties): run-timer, totale timer, doden per speler -> naar HUD.
+ * Stats (control/stats.properties): run timer, total timer, deaths per player -> to the HUD.
  */
 public class HardcoreReset implements ModInitializer {
 	public static final String MOD_ID = "mchc-hardcore";
@@ -54,8 +54,8 @@ public class HardcoreReset implements ModInitializer {
 	private int partnerPort = 25567;
 	private Path controlDir = Paths.get("..", "control");
 	private int countdownSeconds = 5;
-	private String titleTemplate = "%player% is dood gegaan";
-	private String subtitleText = "Kaulo slecht lol, wereld wordt gereset";
+	private String titleTemplate = "%player% died!";
+	private String subtitleText = "So bad lol, resetting server";
 	private String localTransferHost = "127.0.0.1";
 	private String publicTransferHost = "";
 
@@ -78,7 +78,7 @@ public class HardcoreReset implements ModInitializer {
 
 		PayloadTypeRegistry.clientboundPlay().register(MchcStatsPayload.TYPE, MchcStatsPayload.CODEC);
 
-		LOGGER.info("[MCHC] HardcoreReset geladen. server='{}', partner='{}' (poort {}), control='{}'.",
+		LOGGER.info("[MCHC] HardcoreReset loaded. server='{}', partner='{}' (port {}), control='{}'.",
 				serverName, partnerName, partnerPort, controlDir.toAbsolutePath());
 
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) ->
@@ -89,7 +89,7 @@ public class HardcoreReset implements ModInitializer {
 			stats.load();
 			lastTickMillis = System.currentTimeMillis();
 
-			// Death screen MOET zichtbaar zijn (knop "Spectate World"), dus GEEN immediate respawn.
+			// The death screen MUST be visible (the "Spectate World" button), so NO immediate respawn.
 			runCommand(srv, "gamerule doImmediateRespawn false");
 
 			try {
@@ -97,9 +97,9 @@ public class HardcoreReset implements ModInitializer {
 				Files.deleteIfExists(activeFlag());
 				Files.deleteIfExists(resetNowFlag());
 				Files.writeString(readyFlag(), Long.toString(System.currentTimeMillis()));
-				LOGGER.info("[MCHC] '{}' staat klaar als standby-wereld.", serverName);
+				LOGGER.info("[MCHC] '{}' is ready as standby world.", serverName);
 			} catch (IOException e) {
-				LOGGER.error("[MCHC] Kon control-bestanden niet aanmaken", e);
+				LOGGER.error("[MCHC] Could not create control files", e);
 			}
 		});
 
@@ -139,14 +139,14 @@ public class HardcoreReset implements ModInitializer {
 		dispatcher.register(Commands.literal("next").executes(ctx -> {
 			nextRequested = true;
 			ctx.getSource().sendSystemMessage(Component.literal(
-					"[MCHC] 'next' ontvangen - er wordt nu doorgeschakeld naar de volgende wereld."));
-			LOGGER.info("[MCHC] 'next' commando ontvangen op '{}'.", serverName);
+					"[MCHC] 'next' received - switching to the next world now."));
+			LOGGER.info("[MCHC] 'next' command received on '{}'.", serverName);
 			return 1;
 		}));
 	}
 
 	private void startReset(String deadPlayer) {
-		LOGGER.info("[MCHC] '{}' is dood. Aftellen ({}s) op '{}'. Klik 'Spectate World' om te annuleren.",
+		LOGGER.info("[MCHC] '{}' died. Counting down ({}s) on '{}'. Click 'Spectate World' to cancel.",
 				deadPlayer, countdownSeconds, serverName);
 		phase = Phase.COUNTDOWN;
 		countdownTicks = Math.max(1, countdownSeconds * 20);
@@ -154,7 +154,7 @@ public class HardcoreReset implements ModInitializer {
 		try {
 			Files.writeString(wakePartnerFlag(), Long.toString(System.currentTimeMillis()));
 		} catch (IOException e) {
-			LOGGER.error("[MCHC] Kon wake-flag voor partner niet schrijven", e);
+			LOGGER.error("[MCHC] Could not write wake flag for partner", e);
 		}
 		broadcastTitle(deadPlayer);
 	}
@@ -168,7 +168,7 @@ public class HardcoreReset implements ModInitializer {
 	}
 
 	private void onTick(MinecraftServer srv) {
-		// Speeltijd + HUD-stats (per seconde).
+		// Playtime + HUD stats (per second).
 		long now = System.currentTimeMillis();
 		long delta = now - lastTickMillis;
 		lastTickMillis = now;
@@ -188,11 +188,11 @@ public class HardcoreReset implements ModInitializer {
 		switch (phase) {
 			case COUNTDOWN -> {
 				if (nextRequested) {
-					LOGGER.info("[MCHC] Handmatig doorgaan ('next').");
+					LOGGER.info("[MCHC] Continuing manually ('next').");
 					phase = Phase.WAIT_PARTNER;
 				} else if (anyoneSpectating()) {
-					LOGGER.info("[MCHC] 'Spectate World' gekozen - reset GEPAUZEERD. "
-							+ "Typ 'next' in deze console om alsnog naar de volgende wereld te gaan.");
+					LOGGER.info("[MCHC] 'Spectate World' chosen - reset PAUSED. "
+							+ "Type 'next' in this console to go to the next world anyway.");
 					phase = Phase.MANUAL;
 				} else if (--countdownTicks <= 0) {
 					phase = Phase.WAIT_PARTNER;
@@ -209,13 +209,13 @@ public class HardcoreReset implements ModInitializer {
 					phase = Phase.WAIT_EMPTY;
 					waitEmptyTicks = 20 * 15;
 				} else {
-					// partner nog niet wakker? blijf wachten (wake-flag staat al gezet)
+					// partner not awake yet? keep waiting (wake flag is already set)
 				}
 			}
 			case WAIT_EMPTY -> {
 				if (srv.getPlayerList().getPlayers().isEmpty() || --waitEmptyTicks <= 0) {
-					LOGGER.info("[MCHC] Spelers verplaatst. '{}' stopt voor wereld-reset.", serverName);
-					stats.resetRun();   // run-timer reset; totaal blijft staan
+					LOGGER.info("[MCHC] Players transferred. '{}' stopping for world reset.", serverName);
+					stats.resetRun();   // reset run timer; total stays
 					stats.save();
 					phase = Phase.IDLE;
 					nextRequested = false;
@@ -275,7 +275,7 @@ public class HardcoreReset implements ModInitializer {
 				Files.deleteIfExists(activeFlag());
 			}
 		} catch (IOException e) {
-			LOGGER.error("[MCHC] Kon active-flag niet bijwerken", e);
+			LOGGER.error("[MCHC] Could not update active flag", e);
 		}
 	}
 
@@ -298,7 +298,7 @@ public class HardcoreReset implements ModInitializer {
 		try {
 			srv.getCommands().performPrefixedCommand(srv.createCommandSourceStack(), cmd);
 		} catch (Exception e) {
-			LOGGER.warn("[MCHC] Commando '{}' faalde", cmd, e);
+			LOGGER.warn("[MCHC] Command '{}' failed", cmd, e);
 		}
 	}
 
@@ -315,10 +315,10 @@ public class HardcoreReset implements ModInitializer {
 			try (var in = Files.newInputStream(cfg)) {
 				p.load(in);
 			} catch (IOException e) {
-				LOGGER.error("[MCHC] Kon hardcore.properties niet lezen, standaardwaarden gebruikt.", e);
+				LOGGER.error("[MCHC] Could not read hardcore.properties, using defaults.", e);
 			}
 		} else {
-			LOGGER.warn("[MCHC] Geen hardcore.properties in {}. Standaardwaarden.", cfg.toAbsolutePath());
+			LOGGER.warn("[MCHC] No hardcore.properties in {}. Using defaults.", cfg.toAbsolutePath());
 		}
 		serverName = p.getProperty("serverName", serverName).trim();
 		partnerName = p.getProperty("partnerName", partnerName).trim();

@@ -1,5 +1,6 @@
 # MCHC Hardcore — coop hardcore with auto-reset (Minecraft 26.1.2, Fabric)
 
+This quick vibe-coded mod resets your server when a player dies so you can automatically keep playing.
 Two players, one hardcore world, goal: beat the Ender Dragon. The moment **one of you dies**
 a big message appears on screen:
 

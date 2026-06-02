@@ -215,19 +215,25 @@ function New-RunScript($name){
 setlocal
 cd /d "%~dp0"
 set CONTROL=..\control
+set NAME=$name
 :loop
-if exist "%CONTROL%\$name.reset-now.flag" (
-  echo [$name] RESET: wereld wissen en nieuwe seed zetten...
+rem Kill een eventueel achtergebleven (of bevroren) JVM van DEZE server, zodat de wereld-lock
+rem altijd vrij is. Anders crasht de start met "another process has locked the file".
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='java.exe'\" | Where-Object { `$_.CommandLine -match 'mchc.server=%NAME%' } | ForEach-Object { Stop-Process -Id `$_.ProcessId -Force -ErrorAction SilentlyContinue }" >nul 2>&1
+
+if exist "%CONTROL%\%NAME%.reset-now.flag" (
+  echo [%NAME%] RESET: wereld wissen en nieuwe seed zetten...
   if exist world rmdir /s /q world
   powershell -NoProfile -ExecutionPolicy Bypass -File "..\new-seed.ps1" "%CD%\server.properties"
-  del "%CONTROL%\$name.reset-now.flag" >nul 2>&1
+  del "%CONTROL%\%NAME%.reset-now.flag" >nul 2>&1
 )
-if exist "%CONTROL%\$name.ready"  del "%CONTROL%\$name.ready"  >nul 2>&1
-if exist "%CONTROL%\$name.active" del "%CONTROL%\$name.active" >nul 2>&1
-echo [$name] Server start...
-java -Dmchc.server=$name -Xms1G -Xmx2G -jar server.jar nogui
-echo [$name] Server gestopt. Herstart over 3 sec... (sluit dit venster om definitief te stoppen)
-timeout /t 3 /nobreak >nul
+if exist "%CONTROL%\%NAME%.ready"  del "%CONTROL%\%NAME%.ready"  >nul 2>&1
+if exist "%CONTROL%\%NAME%.active" del "%CONTROL%\%NAME%.active" >nul 2>&1
+
+echo [%NAME%] Server start...
+java -Dmchc.server=%NAME% -Xms1G -Xmx2G -jar server.jar nogui
+echo [%NAME%] Server gestopt. Herstart over 2 sec... (sluit dit venster om definitief te stoppen)
+timeout /t 2 /nobreak >nul
 goto loop
 "@ | Set-Content -Path (Join-Path $Server "$name\run.bat") -Encoding ASCII
 }

@@ -13,15 +13,19 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
- * Gedeelde statistieken (speeltijd + doden per speler), opgeslagen in control/stats.properties.
- * Blijft bewaard over wereld-resets én over de wissel tussen de twee servers heen.
+ * Gedeelde statistieken, opgeslagen in control/stats.properties.
+ * Blijft bewaard over de wissel tussen de twee servers heen.
+ *
+ *  totalSeconds = totale speeltijd over alle runs (blijft altijd doortellen).
+ *  runSeconds   = speeltijd van de huidige run; wordt op 0 gezet bij een wereld-reset.
+ *  deaths       = aantal doden per speler (invoegvolgorde = speler 1, 2, ...).
  */
 public class StatsStore {
 	private static final Logger LOGGER = LoggerFactory.getLogger("mchc-hardcore");
 
 	private final Path file;
-	private long playtimeSeconds = 0L;
-	// behoudt invoegvolgorde -> speler 1, speler 2, ...
+	private long totalSeconds = 0L;
+	private long runSeconds = 0L;
 	private final Map<String, Integer> deaths = new LinkedHashMap<>();
 
 	public StatsStore(Path controlDir) {
@@ -37,13 +41,10 @@ public class StatsStore {
 			LOGGER.error("[MCHC] Kon stats.properties niet lezen", e);
 			return;
 		}
-		try {
-			playtimeSeconds = Long.parseLong(p.getProperty("playtimeSeconds", "0").trim());
-		} catch (NumberFormatException ignored) {
-			playtimeSeconds = 0L;
-		}
+		// "playtimeSeconds" is de oude naam; nog ondersteund als fallback voor total.
+		totalSeconds = parseLong(p.getProperty("totalSeconds", p.getProperty("playtimeSeconds", "0")));
+		runSeconds = parseLong(p.getProperty("runSeconds", "0"));
 		deaths.clear();
-		// herstel volgorde via deaths.order, anders gewoon de keys
 		String order = p.getProperty("order", "");
 		if (!order.isBlank()) {
 			for (String name : order.split("\t")) {
@@ -67,9 +68,18 @@ public class StatsStore {
 		}
 	}
 
+	private static long parseLong(String s) {
+		try {
+			return Long.parseLong(s.trim());
+		} catch (NumberFormatException e) {
+			return 0L;
+		}
+	}
+
 	public synchronized void save() {
 		Properties p = new Properties();
-		p.setProperty("playtimeSeconds", Long.toString(playtimeSeconds));
+		p.setProperty("totalSeconds", Long.toString(totalSeconds));
+		p.setProperty("runSeconds", Long.toString(runSeconds));
 		p.setProperty("order", String.join("\t", deaths.keySet()));
 		for (Map.Entry<String, Integer> e : deaths.entrySet()) {
 			p.setProperty("deaths." + e.getKey(), Integer.toString(e.getValue()));
@@ -85,7 +95,13 @@ public class StatsStore {
 	}
 
 	public synchronized void addSecond() {
-		playtimeSeconds++;
+		totalSeconds++;
+		runSeconds++;
+	}
+
+	/** Reset alleen de run-timer (bij een nieuwe wereld). Totaal en doden blijven staan. */
+	public synchronized void resetRun() {
+		runSeconds = 0L;
 	}
 
 	public synchronized void recordDeath(String player) {
@@ -97,8 +113,12 @@ public class StatsStore {
 		deaths.putIfAbsent(player, 0);
 	}
 
-	public synchronized long playtimeSeconds() {
-		return playtimeSeconds;
+	public synchronized long totalSeconds() {
+		return totalSeconds;
+	}
+
+	public synchronized long runSeconds() {
+		return runSeconds;
 	}
 
 	public synchronized List<MchcStatsPayload.Entry> entries() {

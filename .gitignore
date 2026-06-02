@@ -1,0 +1,38 @@
+# ---- MCHC Hardcore .gitignore ----
+# De map MCHC-Server wordt VOLLEDIG gegenereerd door 1-SETUP.bat
+# (server, mods, configs, worlds, libraries). Niets daarvan hoort in git.
+/MCHC-Server/
+
+# Gebouwde mod-output en Gradle-rommel
+mod/build/
+mod/.gradle/
+.gradle/
+build/
+
+# Losse jars (worden gebouwd/gedownload)
+*.jar
+# ...behalve de Gradle-wrapper, die heb je nodig om te bouwen:
+!mod/gradle/wrapper/gradle-wrapper.jar
+
+# Tijdelijke / log / debug bestanden
+*.log
+*.txt.bak
+fix.log
+inspect.txt
+api*.txt
+mcsigs*.txt
+velo.txt
+nettest.txt
+depcheck.txt
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets (voor de zekerheid; deze horen nooit in git)
+*.secret
+forwarding.secret
+.env

@@ -1,0 +1,26 @@
+{
+	"schemaVersion": 1,
+	"id": "mchc-hardcore",
+	"version": "${version}",
+	"name": "MCHC Hardcore Reset",
+	"description": "Coop-hardcore: toont een melding en wisselt naadloos naar een verse wereld (nieuwe seed) zodra een speler sterft, via de vanilla transfer-packet. Plus een HUD met totale speeltijd en death counters.",
+	"authors": [
+		"MCHC"
+	],
+	"contact": {},
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"nl.mchc.hardcore.HardcoreReset"
+		],
+		"client": [
+			"nl.mchc.hardcore.client.HardcoreResetClient"
+		]
+	},
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"fabric-api": "*",
+		"minecraft": ">=26.1 <27"
+	}
+}
